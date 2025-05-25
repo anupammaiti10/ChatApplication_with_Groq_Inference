@@ -24,7 +24,9 @@ if not groq_api_key:
     st.error("Please set the GROQ_API_KEY environment variable.")
     st.stop()                          
 
-llm=ChatGroq(model="meta-llama/llama-4-scout-17b-16e-instruct",groq_api_key=groq_api_key)
+llm=ChatGroq(
+             model="meta-llama/llama-4-scout-17b-16e-instruct",groq_api_key=groq_api_key, streaming=True
+            )
 from langchain_community.tools.tavily_search import TavilySearchResults
 tavily_tool=TavilySearchResults(
     max_results=10,
@@ -102,7 +104,6 @@ def format_documents(inputs:Dict[str,Any])->Dict[str, Any]:
 
 #Retrieving relevant documents ,Stuffing those documents i,Prompting the LLM with the user's question,Generating a final answer and Create the retrieval chain (combines retriever and document chain)
 # retrieval_chain=create_retrieval_chain(ensemble_retriever,chaining)
-
 full_chain = (
     RunnablePassthrough.assign(context=lambda x: ensemble_retriever.invoke(x["input"]),chat_history=lambda x: x["chat_history"]) # Pass history explicitly)
     | RunnableLambda(format_documents)
@@ -121,29 +122,40 @@ conversational_chain=RunnableWithMessageHistory(
 # A string (e.g., the raw LLM response).
 if input_text:
     start=time.process_time()
+    response_container=st.empty()
+    source_container=st.empty()
+    response=""
+    source=[]
     with st.spinner("Generating response..."):
-        response=conversational_chain.invoke(
+        for chunk in conversational_chain.stream(
             {
             "input": input_text,
             "chat_history": st.session_state.chat_history_store.messages
             },                        
             config={"configurable": {"session_id": "streamlit_user_session"}}
-        )
-        end=time.process_time()
-        st.success(f"Response generated in {end-start} seconds")
-       
-        # st.write(response)
-        st.write(response["answer"])
+        ):
+            # end=time.process_time()
+            # st.success(f"Response generated in {end-start} seconds")
         
-        if response.get("url") or response.get("images"):
-            with st.expander("Sources"):
-                # for image in response["images"]:
-                #     if image != None:
-                #         st.image(image)
-                for url in response["url"]:
-                    if url != None:
-                        st.markdown(f"- [{url}]({url})")
-                # for image in response["images"]:
-                #     if image != None:
-                #         st.image(image)
-                 
+            # st.write(response)
+            # st.write(response["answer"])
+            if "answer" in chunk:
+                response+=chunk["answer"]
+                response_container.markdown(response+"|")
+            response_container.markdown(response)
+            # if "url" in chunk:
+            #     source+=chunk["url"]
+            #     source_container.markdown(f"Sources: {', '.join(source)}")
+            
+            # if response.get("url") or response.get("images"):
+            #     with st.expander("Sources"):
+            #         # for image in response["images"]:
+            #         #     if image != None:
+            #         #         st.image(image)
+            #         for url in response["url"]:
+            #             if url != None:
+            #                 st.markdown(f"- [{url}]({url})")
+            #         # for image in response["images"]:
+            #         #     if image != None:
+            #         #         st.image(image)
+                    
